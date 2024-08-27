@@ -1,0 +1,8 @@
+# OS/Editor
+.DS_Store
+
+*.env
+.env.*
+
+# Actually the entire database
+pb_data
