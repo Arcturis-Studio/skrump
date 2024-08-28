@@ -8,12 +8,20 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/models"
+	"github.com/pocketbase/pocketbase/plugins/migratecmd"
+
+	/*
+		Import automatically applies needed migrations on serve
+		https://pocketbase.io/docs/go-migrations/#creating-migrations
+	*/
+	_ "github.com/yourfavoritekyle/skrump/pb_migrations"
 	"github.com/yourfavoritekyle/skrump/src/internal/auth"
 	"github.com/yourfavoritekyle/skrump/src/internal/utils"
 )
 
 func main() {
 	app := pocketbase.New()
+	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{Dir: "pb_migrations"})
 	apis.ActivityLogger(app)
 
 	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
