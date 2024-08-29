@@ -3,6 +3,7 @@
 
 *.env
 .env.*
+dist
 
 # Actually the entire database
 pb_data
