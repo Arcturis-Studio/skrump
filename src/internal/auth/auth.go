@@ -5,11 +5,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Arcturis-Studio/skrump/src/internal/models/smartsheet"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/daos"
 	"github.com/pocketbase/pocketbase/models"
 	"github.com/pocketbase/pocketbase/tools/auth"
-	"github.com/yourfavoritekyle/skrump/src/internal/models/smartsheet"
 )
 
 func TranslateOAuth2UserData(userData *auth.AuthUser) (*auth.AuthUser, error) {

@@ -14,9 +14,9 @@ import (
 		Import automatically applies needed migrations on serve
 		https://pocketbase.io/docs/go-migrations/#creating-migrations
 	*/
-	_ "github.com/yourfavoritekyle/skrump/pb_migrations"
-	"github.com/yourfavoritekyle/skrump/src/internal/auth"
-	"github.com/yourfavoritekyle/skrump/src/internal/utils"
+	_ "github.com/Arcturis-Studio/skrump/pb_migrations"
+	"github.com/Arcturis-Studio/skrump/src/internal/auth"
+	"github.com/Arcturis-Studio/skrump/src/internal/utils"
 )
 
 func main() {

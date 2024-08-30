@@ -1,4 +1,4 @@
-module github.com/yourfavoritekyle/skrump
+module github.com/Arcturis-Studio/skrump
 
 go 1.23.0
 
