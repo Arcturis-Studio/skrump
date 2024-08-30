@@ -1,0 +1,193 @@
+name: Build and push images
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "main"
+      - "feat/*"
+
+env:
+  DOCKER_FOLDER: "docker"
+  FILE_EXT: ".Dockerfile"
+  PLATFORMS: '["linux/amd64", "linux/arm64"]'
+  # NOTE: github.head_ref is set for pull_request events; github.ref_name is set for other events.
+  BRANCH_NAME: $${{ github.ref_name || github.head_ref }}
+
+permissions:
+  packages: write
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      dockerfile: ${{ steps.dockerfiles.outputs.matrix }}
+      platform: ${{ env.PLATFORMS }}
+      repo_slug: ${{ steps.repo_slug.outputs.result }}
+      latest: ${{ steps.latest.outputs.tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare dockerfiles
+        id: dockerfiles
+        run: |
+          echo "matrix=$(for f in ${{ env.DOCKER_FOLDER }}/*${{ env.FILE_EXT }}; do echo "${f%${{ env.FILE_EXT }}}" | cut -d/ -f2-; done | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
+
+      - name: Sanitize repo slug
+        uses: actions/github-script@v7
+        id: repo_slug
+        with:
+          result-encoding: string
+          script: return 'ghcr.io/${{ github.repository }}'.toLowerCase()
+
+      - name: Determine latest tag
+        # https://stackoverflow.com/questions/28666357/how-to-get-default-git-branch/67170894#67170894
+        id: latest
+        run: |
+          echo "TAG=$(if ${{ format('refs/heads/{0}', github.event.repository.default_branch) == env.BRANCH_NAME }}; then echo 'latest'; fi)" >> $GITHUB_OUTPUT
+
+      - name: Prepare summary
+        run: |
+          echo "## Prepare summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "<details>" >> $GITHUB_STEP_SUMMARY
+          echo "<summary>Dockerfiles</summary>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`sh" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.dockerfiles.outputs.matrix }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "</details>" >> $GITHUB_STEP_SUMMARY
+          echo "<details>" >> $GITHUB_STEP_SUMMARY
+          echo "<summary>Platforms</summary>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`sh" >> $GITHUB_STEP_SUMMARY
+          echo "${{ env.PLATFORMS }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "</details>" >> $GITHUB_STEP_SUMMARY
+          echo "<details>" >> $GITHUB_STEP_SUMMARY
+          echo "<summary>Repository Path</summary>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`sh" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.repo_slug.outputs.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "</details>" >> $GITHUB_STEP_SUMMARY
+          echo "<details>" >> $GITHUB_STEP_SUMMARY
+          echo "<summary>Latest Tag</summary>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`sh" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.latest.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "</details>" >> $GITHUB_STEP_SUMMARY
+
+  build:
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ${{ fromJson(needs.prepare.outputs.platform) }}
+        dockerfile: ${{ fromJson(needs.prepare.outputs.dockerfile) }}
+
+    steps:
+      - name: Prepare platform
+        run: |
+          platform=${{ matrix.platform }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ needs.prepare.outputs.repo_slug }}/${{ matrix.dockerfile }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          file: ${{ env.DOCKER_FOLDER }}/${{ matrix.dockerfile }}${{ env.FILE_EXT }}
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ needs.prepare.outputs.repo_slug }}/${{ matrix.dockerfile }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=registry,ref=${{ needs.prepare.outputs.repo_slug }}/${{ matrix.dockerfile }}:buildcache
+          cache-to: type=registry,ref=${{ needs.prepare.outputs.repo_slug }}/${{ matrix.dockerfile }}:buildcache,mode=max
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ env.PLATFORM_PAIR }}-${{ matrix.dockerfile }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+      - build
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile: ${{ fromJson(needs.prepare.outputs.dockerfile) }}
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*-${{ matrix.dockerfile }}
+          merge-multiple: true
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ needs.prepare.outputs.repo_slug }}/${{ matrix.dockerfile }}
+          tags: |
+            type=schedule
+            type=ref,event=branch
+            type=ref,event=tag
+            type=ref,event=pr
+            type=raw,value=${{ needs.prepare.outputs.latest }},priority=2000
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ needs.prepare.outputs.repo_slug }}/${{ matrix.dockerfile }}@sha256:%s ' *)
+
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect ${{ needs.prepare.outputs.repo_slug }}/${{ matrix.dockerfile }}:${{ steps.meta.outputs.version }}
