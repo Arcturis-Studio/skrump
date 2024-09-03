@@ -17,17 +17,23 @@ RUN mv ./pb_public /dist/pb_public
 # RUN go test -v ./...
 
 # Deploy the application binary into a lean image
-FROM gcr.io/distroless/base-debian12 AS build-release-stage
+# Image needs socat and useradd capabilities
+FROM debian:stable-slim AS deb-extract
 
-WORKDIR /skrump
+COPY --from=build-stage /dist/ /skrump
+COPY --chmod=777 docker/includes/server.sh /usr/local/sbin/server.sh
 
-COPY --from=build-stage /dist/ ./
+# Install socat and setup user account
+RUN apt-get update && apt-get install -y socat && \
+    useradd -G daemon --shell "/bin/sh" -mk /dev/null "skrump" && \
+    echo "skrump ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers;
 
-VOLUME ./pb_data
-
+VOLUME ["/skrump/pb_data", "/var/run/host_docker.sock"]
 EXPOSE 8090
 
-USER nonroot:nonroot
-
-
-ENTRYPOINT ["./pocketbase", "serve"]
+# Launches socat for docker host redirect and pocketbase.
+# Pocketbase eats all arguments passed into the container exec
+ENTRYPOINT ["/usr/local/sbin/server.sh"]
+# Amazing blog post and github repo demonstrating a socat host docker.sock redirect
+# https://www.knusbaum.org/posts/revisiting-docker-in-devenv
+# https://github.com/klnusbaum/kdevenv
