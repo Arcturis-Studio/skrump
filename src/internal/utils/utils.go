@@ -1,7 +1,8 @@
 package utils
 
-import "log"
-
+import (
+	"log"
+)
 
 func AssertStringValue(d any) string {
 	s, ok := d.(string)

@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/labstack/echo/v5"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
@@ -16,6 +17,7 @@ import (
 	*/
 	_ "github.com/Arcturis-Studio/skrump/pb_migrations"
 	"github.com/Arcturis-Studio/skrump/src/internal/auth"
+	"github.com/Arcturis-Studio/skrump/src/internal/docker"
 	"github.com/Arcturis-Studio/skrump/src/internal/utils"
 )
 
@@ -23,9 +25,39 @@ func main() {
 	app := pocketbase.New()
 	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{Dir: "pb_migrations"})
 	apis.ActivityLogger(app)
+	dockerClient, err := docker.NewDockerClient()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	app.OnAfterBootstrap().Add(func(e *core.BootstrapEvent) error {
+		// NOTE: Cleaning up after bootstrap so we are not blocking pocketbase from serving assets
+		// There should not be any containers from this app unless we crashed.
+		if err := dockerClient.CleanUpContainers(); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	app.OnTerminate().Add(func(e *core.TerminateEvent) error {
+		// Cleanup all containers on SIGTERM
+		if err := dockerClient.CleanUpContainers(); err != nil {
+			return err
+		}
+
+		return nil
+	})
 
 	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
 		e.Router.GET("/*", apis.StaticDirectoryHandler(os.DirFS("./pb_public"), false))
+
+		e.Router.GET("/spawn_container", func(c echo.Context) error {
+			// go utils.SpawnDockerContainer("-p", "55002:80", "nginxdemos/hello")
+			go dockerClient.SpawnDockerContainer("")
+
+			return nil
+		})
 
 		return nil
 	})
