@@ -32,7 +32,7 @@ func main() {
 
 	app.OnAfterBootstrap().Add(func(e *core.BootstrapEvent) error {
 		// NOTE: Cleaning up after bootstrap so we are not blocking pocketbase from serving assets
-		// There should not be any containers from this app unless we crashed.
+		// There should not be any containers from this app on startup unless we crashed.
 		if err := dockerClient.CleanUpContainers(); err != nil {
 			return err
 		}
@@ -52,9 +52,9 @@ func main() {
 	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
 		e.Router.GET("/*", apis.StaticDirectoryHandler(os.DirFS("./pb_public"), false))
 
+		// TODO: Adjust this to be a dynamic route (webhooks)
 		e.Router.GET("/spawn_container", func(c echo.Context) error {
-			// go utils.SpawnDockerContainer("-p", "55002:80", "nginxdemos/hello")
-			go dockerClient.SpawnDockerContainer("")
+			go dockerClient.SpawnDockerContainer()
 
 			return nil
 		})

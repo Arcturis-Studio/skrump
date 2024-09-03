@@ -2,7 +2,6 @@ package docker
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -46,6 +45,8 @@ func (d *DockerClient) ListImages() ([]image.Summary, error) {
 	return images, nil
 }
 
+// NOTE: This returns an error, but we will almost always call into a goroutine,
+// we should consider handling errors differently here. Maybe direct to logs?
 func (d *DockerClient) SpawnDockerContainer(arg ...string) error {
 
 	reader, err := d.ImagePull(d.ctx, "nginxdemos/hello", image.PullOptions{})
@@ -91,22 +92,23 @@ func (d *DockerClient) SpawnDockerContainer(arg ...string) error {
 	}
 
 	stdcopy.StdCopy(os.Stdout, os.Stderr, out)
-	// log.Println("%s %s (status: %s)\n", ctr.ID, ctr.Image, ctr.Status)
 
 	return nil
 }
 
-// NOTE: This relies on HOSTNAME not being set on the containers.
-// If hostnames are customized, there is a chance there will be a collision here.
+/*
+Will kill all containers except self.
+
+This relies on Docker defaulting HOSTNAME to the short container id.
+If primary sibling container was created with a custom HOSTNAME, this will kill itself.
+*/
 func (d *DockerClient) CleanUpContainers() error {
-	fmt.Println("Cleaning up existing containers")
 	selfID, err := os.Hostname()
 	if err != nil {
 		// TODO: Either panic here or log hostname error
 		return err
 	}
-	fmt.Printf("Found selfID (hostname) as: %s\n", selfID)
-	// TODO: Logging
+	// TODO: Log found selfID (hostname)
 	containers, err := d.GetContainers()
 	if err != nil {
 		return nil
@@ -114,7 +116,7 @@ func (d *DockerClient) CleanUpContainers() error {
 
 	for _, c := range containers {
 		if !strings.HasPrefix(c.ID, selfID) {
-			fmt.Printf("Stopping container with ID: %s\n", c.ID)
+			// TODO: Log stopped container
 			if err := d.StopContainer(c.ID); err != nil {
 				return err
 			}
