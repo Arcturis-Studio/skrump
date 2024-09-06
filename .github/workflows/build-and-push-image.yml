@@ -46,7 +46,7 @@ jobs:
         # https://stackoverflow.com/questions/28666357/how-to-get-default-git-branch/67170894#67170894
         id: latest
         run: |
-          echo "TAG=$(if ${{ format('refs/heads/{0}', github.event.repository.default_branch) == env.BRANCH_NAME }}; then echo 'latest'; fi)" >> $GITHUB_OUTPUT
+          echo "TAG=$(if ${{ format('refs/heads/{0}', 'main') == env.BRANCH_NAME }}; then echo 'latest'; fi)" >> $GITHUB_OUTPUT
 
       - name: Prepare summary
         run: |
@@ -126,7 +126,7 @@ jobs:
         with:
           file: ${{ env.DOCKER_FOLDER }}/${{ matrix.dockerfile }}${{ env.FILE_EXT }}
           platforms: ${{ matrix.build_targets.platform }}
-          buildargs: CHIPSET_ARCH=${{ matrix.build_targets.arch }}
+          build-args: CHIPSET_ARCH=${{ matrix.build_targets.arch }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ needs.prepare.outputs.repo_slug }}/${{ matrix.dockerfile }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=registry,ref=${{ needs.prepare.outputs.repo_slug }}/${{ matrix.dockerfile }}:buildcache
