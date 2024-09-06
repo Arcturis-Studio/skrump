@@ -1,7 +1,17 @@
-# Credit: https://github.com/alexdmoss/distroless-python
+# TODO: Replace full go with https://github.com/go-git/go-git, hopefully this will reduce final image size
+
+# Heavily inspired by: https://github.com/alexdmoss/distroless-python
 ## -------------- Layer to give access to newer python + its dependencies ------------- ##
 ### Base image for Python 3.12 with slim bookworm optimization ###
 FROM python:3.12-slim-bookworm AS python-base
+## ------------  Download and package git ------------##
+USER root:root
+RUN apt-get update && apt-get install -y apt-rdepends \
+    && mkdir /git-dist && cd /git-dist && mkdir dl dist && cd dl \
+    && apt-get download $(apt-rdepends git | grep -E '^[a-zA-Z0-9]') \
+    && for filename in /git-dist/dl/*; do \
+    dpkg -x $filename /git-dist/dist; done
+
 
 ## ------------ Setup standard non-root user for use downstream ------------##
 ### Create a standard non-root user for running applications ###
@@ -52,6 +62,8 @@ COPY --from=python-base /usr/lib/${CHIPSET_ARCH}-linux-gnu/libffi* /usr/lib/${CH
 COPY --from=python-base /lib/${CHIPSET_ARCH}-linux-gnu/libexpat* /lib/${CHIPSET_ARCH}-linux-gnu/
 # Required for job dependencies
 COPY --from=python-base /usr/local/bin/pip /usr/local/bin/
+# Copy git packge; NOTE: I imagine could be optimized by a cusom git build, we really only need clone
+COPY --from=python-base /git-dist/dist/ /
 
 ## --------------------------- Add shell ---------------------------- ##
 ### Copy common system binaries to this layer ###
@@ -82,5 +94,6 @@ ENV LC_ALL C.UTF-8
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONFAULTHANDLER 1
 
-# ENTRYPOINT ["/usr/local/bin/python"]
-ENTRYPOINT ["/bin/sh"]
+WORKDIR /home/${NONROOT_USER}
+
+ENTRYPOINT sh
